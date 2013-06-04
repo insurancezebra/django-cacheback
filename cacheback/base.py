@@ -1,10 +1,11 @@
 import time
 import logging
 
-from django.core.cache import cache
 from django.conf import settings
 
 from cacheback import tasks
+
+from cache_tagging.django_cache_tagging import cache
 
 logging.basicConfig()
 logger = logging.getLogger('cacheback')
@@ -47,6 +48,9 @@ class Job(object):
     #: but stale from. Default behaviour is never to do a synchronous fetch but
     #: there will be times when an item is _too_ stale to be returned.
     fetch_on_stale_threshold = None
+
+    # for tagging we need to define tags to the cached items
+    tags = ()
 
     # --------
     # MAIN API
@@ -163,7 +167,7 @@ class Job(object):
         :expiry: The expiry timestamp after which the result is stale
         :data: The data to cache
         """
-        cache.set(key, (expiry, data), self.cache_ttl)
+        cache.set(key, (expiry, data), self.tags, self.cache_ttl)
 
         if getattr(settings, 'CACHEBACK_VERIFY_CACHE_WRITE', True):
             # We verify that the item was cached correctly.  This is to avoid a
