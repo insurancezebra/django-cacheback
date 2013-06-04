@@ -6,7 +6,7 @@ from cacheback.function import FunctionJob
 
 
 def cacheback(lifetime=None, fetch_on_miss=None, job_class=None,
-              task_options=None):
+              task_options=None, tags=None):
     """
     Decorate function to cache its return value.
 
@@ -19,7 +19,7 @@ def cacheback(lifetime=None, fetch_on_miss=None, job_class=None,
     if job_class is None:
         job_class = FunctionJob
     job = job_class(lifetime=lifetime, fetch_on_miss=fetch_on_miss,
-                    task_options=task_options)
+                    task_options=task_options, tags=tags)
 
     def _wrapper(fn):
         # using available_attrs to work around http://bugs.python.org/issue3445

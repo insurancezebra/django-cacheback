@@ -1,5 +1,6 @@
 # Sandbox reqs
 python-memcached==1.48
+cache-tagging==0.7.7.0
 
 # Testing reqs
 django-nose==1.1
