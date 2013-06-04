@@ -20,9 +20,9 @@ setup(name='django-cacheback',
       packages=find_packages(exclude=["sandbox*", "tests*"]),
       include_package_data=True,
       install_requires=[
-          'django>=1.3',
-          'django-celery>=3.0',
-          ],
+          'Django==1.4.3',
+          'django-celery==3.0.11',
+          'cache-tagging==0.7.7.0'],
       # See http://pypi.python.org/pypi?%3Aaction=list_classifiers
       classifiers=['Environment :: Web Environment',
                    'Framework :: Django',
