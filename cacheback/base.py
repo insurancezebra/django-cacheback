@@ -178,9 +178,13 @@ class Job(object):
             # without warning.
             __, cached_data = cache.get(key, (None, None))
             if data is not None and cached_data is None:
-                raise RuntimeError(
-                    "Unable to save data of type %s to cache" % (
-                        type(data)))
+                if gettattr(settings, 'CACHEBACK_VERIFY_RAISE_ERROR', True):
+                    raise RuntimeError(
+                        "Unable to save data of type %s to cache. Key: %s, Data: %s, Tags: %s, Expiry: %s" % (
+                            type(data), key, data, self.tags, expiry))
+                else:
+                    logger.error("Unable to save data of type %s to cache. Key: %s, Data: %s, Tags: %s, Expiry: %s",
+                                 type(data), key, data, self.tags, expiry)
 
     def refresh(self, *args, **kwargs):
         """
