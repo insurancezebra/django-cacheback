@@ -1,5 +1,9 @@
 .vagrant
-sandbox/puppet/modules
+sandbox/db.sqlite3
 docs/_build
 dist/*
+build/*
 .coverage
+TODO
+.tox
+__pycache__

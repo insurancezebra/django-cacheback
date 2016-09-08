@@ -2,9 +2,9 @@
 Contributing
 ============
 
-Get set up by cloning, creating a virtualenv and running::
+Start by cloning the repo, creating a virtualenv and running::
 
-    make develop
+    $ make install
 
 to install the testing dependencies.
 
@@ -13,33 +13,41 @@ Running tests
 
 Use::
 
-    ./runtests.py
+    $ py.test
+
+or generate coverage report::
+
+    $ py.test --cov
+
+or use Tox with::
+
+    $ tox
+
+to test all Python/Django combinations.
 
 Sandbox VM
 ==========
 
-There is a VagrantFile for setting up a sandbox VM where you can play around
-with the functionality.  First install the necessary puppet modules::
+There is a ``VagrantFile`` for setting up a sandbox VM where you can play around
+with the functionality.  Bring up the Vagrant box::
 
-    make puppet
-
-then boot and provision the VM::
-
-    vagrant up
+    $ vagrant up
 
 This may take a while but will set up a Ubuntu Precise64 VM with RabbitMQ
-installed and configured.  You can then SSH into the machine and run the Django
-development server::
+installed.  You can then SSH into the machine::
 
-    vagrant ssh
-    cd /vagrant/sandbox
-    source /var/www/virtual/bin/activate
-    ./manage.py loaddata/fixture.json
-    ./manage.py runserver 0.0.0.0:8000
+    $ vagrant ssh
+    $ cd /vagrant/sandbox
 
-The dummy site will be available at ``localhost:8080``.  There are some sample
-views in ``sandbox/dummyapp/views.py`` that exercise django-cacheback.
+You can now decide to run the Celery implementation::
 
-Run a Celery worker using::
+    $ honcho -f Procfile.celery start
 
-    ./manage.py celeryctl worker --loglevel=INFO
+Or you can run the RQ implementation::
+
+    $ honcho -f Procfile.rq start
+
+The above commands will start a Django runserver and the selected task worker.
+The dummy site will be available at ``http://localhost:8080`` on your host
+machine.  There are some sample views in ``sandbox/dummyapp/views.py`` that
+exercise django-cacheback.

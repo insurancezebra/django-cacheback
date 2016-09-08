@@ -6,18 +6,20 @@ class QuerySetJob(Job):
     Helper class for wrapping ORM reads
     """
 
-    def __init__(self, model, lifetime=None, fetch_on_miss=None, tags=None):
+    def __init__(self, model, lifetime=None, fetch_on_miss=None, task_options=None, tags=None):
         """
         :model: The model class to use
         """
+        super(QuerySetJob, self).__init__()
         self.model = model
         if lifetime is not None:
             self.lifetime = lifetime
         if fetch_on_miss is not None:
             self.fetch_on_miss = fetch_on_miss
+        if task_options is not None:
+            self.task_options = task_options
         if tags is not None:
             self.tags = tags
-
     def key(self, *args, **kwargs):
         return "%s-%s" % (
             self.model.__name__,

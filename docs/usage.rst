@@ -17,7 +17,7 @@ Simply wrap the function whose results you want to cache::
 
 The default behaviour of the ``cacheback`` decorator is to:
 
-* Cache items for 5 minutes.  
+* Cache items for 10 minutes.  
 
 * When the cache is empty for a given key, the data will be fetched
   synchronously.      
@@ -119,3 +119,10 @@ You can also simply remove an item from the cache so that the next request will
 trigger the refresh::
 
     job.delete(username)
+
+Post-processing
+~~~~~~~~~~~~~~~
+
+The ``cacheback.Job`` instance provides a `process_result` method that can be
+overridden to modify the result value being returned. You can use this to append
+information about whether the result is being returned from cache or not.

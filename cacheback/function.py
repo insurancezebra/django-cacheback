@@ -1,4 +1,7 @@
-from django.utils import importlib
+try:
+    import importlib
+except ImportError:
+    import django.utils.importlib as importlib
 
 from cacheback.base import Job
 
@@ -9,6 +12,7 @@ class FunctionJob(Job):
     """
 
     def __init__(self, lifetime=None, fetch_on_miss=None, task_options=None, tags=None):
+        super(FunctionJob, self).__init__()
         if lifetime is not None:
             self.lifetime = int(lifetime)
         if fetch_on_miss is not None:

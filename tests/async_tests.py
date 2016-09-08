@@ -1,9 +1,9 @@
 import time
 
+import mock
 from django.core.cache import cache
 from django.test import TestCase
 from django.test.utils import override_settings
-import mock
 
 from cacheback.base import Job
 
@@ -16,6 +16,7 @@ class StaleSyncJob(Job):
     fetch_on_stale_threshold = 10
 
     def __init__(self):
+        super(StaleSyncJob, self).__init__()
         self.called_async = False
 
     def fetch(self):

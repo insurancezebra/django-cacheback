@@ -1,14 +1,15 @@
-develop:
-	python setup.py develop
-	pip install -r requirements.txt
+.PHONY = install lint test release clean
 
-puppet:
-	# Install puppet modules required to set-up sandbox server
-	puppet module install --target-dir sandbox/puppet/modules/ puppetlabs-rabbitmq -v 2.0.1
-	puppet module install --target-dir sandbox/puppet/modules/ saz-memcached -v 2.0.2
-	git clone git://github.com/puppetmodules/puppet-module-python.git sandbox/puppet/modules/python
-	git clone git://github.com/codeinthehole/puppet-userconfig.git sandbox/puppet/modules/userconfig
+install:
+	pip install -e .[tests]
+	pip install -r sandbox/requirements.txt
 
 release:
 	python setup.py sdist upload
+	python setup.py bdist_wheel --universal upload
 	git push --tags
+
+clean:
+	find . -name '*.pyc' -delete
+	find . -name '__pycache__' -exec xargs rm -r
+	rm -rf *.egg-info dist

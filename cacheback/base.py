@@ -1,16 +1,42 @@
-import time
+import collections
+import hashlib
 import logging
+import time
 
 from django.conf import settings
-
-from cacheback import tasks
-
 from cache_tagging.django_cache_tagging import cache
+from django.db.models import Model as DjangoModel
+from django.utils import six
 
-logging.basicConfig()
+from cacheback.utils import enqueue_task, get_cache, get_job_class
+
+
 logger = logging.getLogger('cacheback')
 
 MEMCACHE_MAX_EXPIRATION = 2592000
+
+
+# Container for call args (which makes things simpler to pass around)
+Call = collections.namedtuple("Call", ['args', 'kwargs'])
+
+
+def to_bytestring(value):
+    """
+    Encode an object as a UTF8 bytestring.  This function could be passed a
+    bytestring, unicode string or object so must distinguish between them.
+
+    :param value: object we want to transform into a bytestring
+    :returns: a bytestring
+    """
+    if isinstance(value, DjangoModel):
+        return ('%s:%s' % (value.__class__, hash(value))).encode('utf-8')
+    if isinstance(value, six.text_type):
+        return value.encode('utf8')
+    if isinstance(value, six.binary_type):
+        return value
+    if six.PY2:
+        return str(value)
+    return bytes(str(value), 'utf8')
 
 
 class Job(object):
@@ -25,11 +51,11 @@ class Job(object):
     # expiry value is None, this indicates that there is already a job created
     # for refreshing this item.
 
-    #: Default cache lifetime is 5 minutes.  After this time, the result will
+    #: Default cache lifetime is 10 minutes.  After this time, the result will
     #: be considered stale and requests will trigger a job to refresh it.
     lifetime = 600
 
-    #: Timeout period during which no new Celery tasks will be created for a
+    #: Timeout period during which no new tasks will be created for a
     #: single cache item.  This time should cover the normal time required to
     #: refresh the cache.
     refresh_timeout = 60
@@ -50,10 +76,17 @@ class Job(object):
     fetch_on_stale_threshold = None
 
     #: Overrides options for `refresh_cache.apply_async` (e.g. `queue`).
-    task_options = {}
+    task_options = None
 
-    # for tagging we need to define tags to the cached items
-    tags = ()
+    #: Cache statuses
+    MISS, HIT, STALE = range(3)
+
+    def __init__(self):
+        self.cache = cache
+        self.task_options = self.task_options or {}
+
+        # for tagging we need to define tags to the cached items
+        self.tags = ()
 
     # --------
     # MAIN API
@@ -72,7 +105,9 @@ class Job(object):
 
         # Build the cache key and attempt to fetch the cached item
         key = self.key(*args, **kwargs)
-        item = cache.get(key)
+        item = self.cache.get(key)
+
+        call = Call(args=raw_args, kwargs=raw_kwargs)
 
         if item is None:
             # Cache MISS - we can either:
@@ -83,19 +118,24 @@ class Job(object):
                 logger.debug(("Job %s with key '%s' - cache MISS - running "
                               "synchronous refresh"),
                              self.class_path, key)
-                return self.refresh(*args, **kwargs)
+                result = self.refresh(*args, **kwargs)
+                return self.process_result(
+                    result, call=call, cache_status=self.MISS, sync_fetch=True)
+
             else:
                 logger.debug(("Job %s with key '%s' - cache MISS - triggering "
                               "async refresh and returning empty result"),
                              self.class_path, key)
-                # To avoid cache hammering (ie lots of identical Celery tasks
+                # To avoid cache hammering (ie lots of identical tasks
                 # to refresh the same cache item), we reset the cache with an
                 # empty result which will be returned until the cache is
                 # refreshed.
-                empty = self.empty()
-                self.cache_set(key, self.timeout(*args, **kwargs), empty)
+                result = self.empty()
+                self.cache_set(key, self.timeout(*args, **kwargs), result)
                 self.async_refresh(*args, **kwargs)
-                return empty
+                return self.process_result(
+                    result, call=call, cache_status=self.MISS,
+                    sync_fetch=False)
 
         expiry, data = item
         delta = time.time() - expiry
@@ -109,13 +149,17 @@ class Job(object):
                     delta, *args, **kwargs):
                 logger.debug(
                     ("Job %s with key '%s' - STALE cache hit - running "
-                    "synchronous refresh"),
+                     "synchronous refresh"),
                     self.class_path, key)
-                return self.refresh(*args, **kwargs)
+                result = self.refresh(*args, **kwargs)
+                return self.process_result(
+                    result, call=call, cache_status=self.STALE,
+                    sync_fetch=True)
+
             else:
                 logger.debug(
                     ("Job %s with key '%s' - STALE cache hit - triggering "
-                    "async refresh and returning stale result"),
+                     "async refresh and returning stale result"),
                     self.class_path, key)
                 # We replace the item in the cache with a 'timeout' expiry - this
                 # prevents cache hammering but guards against a 'limbo' situation
@@ -123,9 +167,11 @@ class Job(object):
                 timeout = self.timeout(*args, **kwargs)
                 self.cache_set(key, timeout, data)
                 self.async_refresh(*args, **kwargs)
+                return self.process_result(
+                    data, call=call, cache_status=self.STALE, sync_fetch=False)
         else:
             logger.debug("Job %s with key '%s' - cache HIT", self.class_path, key)
-        return data
+            return self.process_result(data, call=call, cache_status=self.HIT)
 
     def invalidate(self, *raw_args, **raw_kwargs):
         """
@@ -135,7 +181,7 @@ class Job(object):
         args = self.prepare_args(*raw_args)
         kwargs = self.prepare_kwargs(**raw_kwargs)
         key = self.key(*args, **kwargs)
-        item = cache.get(key)
+        item = self.cache.get(key)
         if item is not None:
             expiry, data = item
             self.cache_set(key, self.timeout(*args, **kwargs), data)
@@ -148,9 +194,9 @@ class Job(object):
         args = self.prepare_args(*raw_args)
         kwargs = self.prepare_kwargs(**raw_kwargs)
         key = self.key(*args, **kwargs)
-        item = cache.get(key)
+        item = self.cache.get(key)
         if item is not None:
-            cache.delete(key)
+            self.cache.delete(key)
 
     # --------------
     # HELPER METHODS
@@ -170,13 +216,13 @@ class Job(object):
         :expiry: The expiry timestamp after which the result is stale
         :data: The data to cache
         """
-        cache.set(key, (expiry, data), self.tags, self.cache_ttl)
+        self.cache.set(key, (expiry, data), self.tags, self.cache_ttl)
 
         if getattr(settings, 'CACHEBACK_VERIFY_CACHE_WRITE', True):
             # We verify that the item was cached correctly.  This is to avoid a
             # Memcache problem where some values aren't cached correctly
             # without warning.
-            __, cached_data = cache.get(key, (None, None))
+            __, cached_data = self.cache.get(key, (None, None))
             if data is not None and cached_data is None:
                 if getattr(settings, 'CACHEBACK_VERIFY_RAISE_ERROR', True):
                     raise RuntimeError(
@@ -203,8 +249,9 @@ class Job(object):
         # We trigger the task with the class path to import as well as the
         # (a) args and kwargs for instantiating the class
         # (b) args and kwargs for calling the 'refresh' method
+
         try:
-            tasks.refresh_cache.apply_async(
+            enqueue_task(
                 kwargs=dict(
                     klass_str=self.class_path,
                     obj_args=self.get_constructor_args(),
@@ -214,19 +261,18 @@ class Job(object):
                 ),
                 **self.task_options
             )
-        except Exception, e:
+        except Exception as e:
             # Handle exceptions from talking to RabbitMQ - eg connection
             # refused.  When this happens, we try to run the task
             # synchronously.
             logger.error("Unable to trigger task asynchronously - failing "
-                         "over to synchronous refresh")
-            logger.exception(e)
+                         "over to synchronous refresh", exc_info=True)
             try:
                 return self.refresh(*args, **kwargs)
-            except Exception, e:
+            except Exception as e:
                 # Something went wrong while running the task
-                logger.error("Unable to refresh data synchronously: %s", e)
-                logger.exception(e)
+                logger.error("Unable to refresh data synchronously: %s", e,
+                             exc_info=True)
             else:
                 logger.debug("Failover synchronous refresh completed successfully")
 
@@ -302,19 +348,29 @@ class Job(object):
             return self.class_path
         try:
             if args and not kwargs:
-                return "%s:%s" % (self.class_path, hash(args))
+                return "%s:%s" % (self.class_path, self.hash(args))
             # The line might break if your passed values are un-hashable.  If
             # it does, you need to override this method and implement your own
             # key algorithm.
             return "%s:%s:%s:%s" % (self.class_path,
-                                    hash(args),
-                                    hash(tuple(kwargs.keys())),
-                                    hash(tuple(kwargs.values())))
+                                    self.hash(args),
+                                    self.hash(tuple([k for k in sorted(kwargs)])),
+                                    self.hash(tuple([kwargs[k] for k in sorted(kwargs)])))
         except TypeError:
             raise RuntimeError(
                 "Unable to generate cache key due to unhashable"
                 "args or kwargs - you need to implement your own"
                 "key generation method to avoid this problem")
+
+    def hash(self, value):
+        """
+        Generate a hash of the given tuple.
+
+        This is for use in a cache key.
+        """
+        if isinstance(value, tuple):
+            value = tuple(to_bytestring(v) for v in value)
+        return hashlib.md5(six.b(':').join(value)).hexdigest()
 
     def fetch(self, *args, **kwargs):
         """
@@ -322,3 +378,59 @@ class Job(object):
         be done.
         """
         raise NotImplementedError()
+
+    def process_result(self, result, call, cache_status, sync_fetch=None):
+        """
+        Transform the fetched data right before returning from .get(...)
+
+        :param result: The result to be returned
+        :param call: A named tuple with properties 'args' and 'kwargs that
+                     holds the call args and kwargs
+        :param cache_status: A status integrer, accessible as class constants
+                             self.MISS, self.HIT, self.STALE
+        :param sync_fetch: A boolean indicating whether a synchronous fetch was
+                           performed. A value of None indicates that no fetch
+                           was required (ie the result was a cache hit).
+        """
+        return result
+
+    # --------------------
+    # ASYNC HELPER METHODS
+    # --------------------
+
+    @classmethod
+    def job_refresh(cls, klass_str, obj_args, obj_kwargs, call_args, call_kwargs):
+        """
+        Re-populate cache using the given job class.
+
+        The job class is instantiated with the passed constructor args and the
+        refresh method is called with the passed call args.  That is::
+
+            data = klass(*obj_args, **obj_kwargs).refresh(
+                *call_args, **call_kwargs)
+
+        :klass_str: String repr of class (eg 'apps.twitter.jobs.FetchTweetsJob')
+        :obj_args: Constructor args
+        :obj_kwargs: Constructor kwargs
+        :call_args: Refresh args
+        :call_kwargs: Refresh kwargs
+        """
+        klass = get_job_class(klass_str)
+        if klass is None:
+            logger.error("Unable to construct %s with args %r and kwargs %r",
+                         klass_str, obj_args, obj_kwargs)
+            return
+
+        logger.info("Using %s with constructor args %r and kwargs %r",
+                    klass_str, obj_args, obj_kwargs)
+        logger.info("Calling refresh with args %r and kwargs %r", call_args,
+                    call_kwargs)
+        start = time.time()
+        try:
+            klass(*obj_args, **obj_kwargs).refresh(
+                *call_args, **call_kwargs)
+        except Exception as e:
+            logger.exception("Error running job: '%s'", e)
+        else:
+            duration = time.time() - start
+            logger.info("Refreshed cache in %.6f seconds", duration)

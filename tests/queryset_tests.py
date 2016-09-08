@@ -1,5 +1,5 @@
-from django.test import TestCase
 from django.core.cache import cache
+from django.test import TestCase
 
 from cacheback.base import Job
 from cacheback.queryset import QuerySetFilterJob, QuerySetGetJob
@@ -29,7 +29,7 @@ class TestManualQuerySetJob(TestCase):
 
     def test_makes_only_one_database_query(self):
         with self.assertNumQueries(1):
-            for _ in xrange(10):
+            for _ in range(10):
                 self.job.get('Alan')
 
 
@@ -77,11 +77,3 @@ class TestEdgeCases(TestCase):
 
     def tearDown(self):
         cache.clear()
-
-    def test_unhashable_arg_raises_exception(self):
-        with self.assertRaises(RuntimeError):
-            self.job.get({})
-
-    def test_unhashable_kwarg_raises_exception(self):
-        with self.assertRaises(RuntimeError):
-            self.job.get(name={})

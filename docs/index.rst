@@ -8,11 +8,13 @@ Django Cacheback
 ================
 
 Cacheback is an extensible caching library that refreshes stale cache items
-asynchronously using a Celery_ task.  The key idea being that it's
-better to serve a stale item (and populate the cache asynchronously) than block
-the user in order to repopulate the cache synchronously.
+asynchronously using a Celery_ or rq_ task (utilizing django-rq).  The key
+idea being that it's better to serve a stale item (and populate the cache
+asynchronously) than block the response process in order to populate the cache
+synchronously.
 
 .. _Celery: http://celeryproject.org/
+.. _rq: http://python-rq.org/
 
 Using this library, you can rework your views so that all reads are from
 cache - which can be a significant performance boost.  
@@ -69,14 +71,16 @@ shortcomings of this approach are:
 * For a cache miss, the tweets are fetched synchronously, blocking code execution
   and leading to a slow response time.
 
-* This in turn exposes exposes the view to a '`cache stampede`_' where
+* This in turn exposes the view to a '`cache stampede`_' where
   multiple expensive reads run simultaneously when the cached item expires.
   Under heavy load, this can bring your site down and make you sad.
 
 .. _`cache stampede`: http://en.wikipedia.org/wiki/Cache_stampede
 
 Now, consider an alternative implementation that uses a Celery task to repopulate the
-cache asynchronously instead of during the request/response cycle::
+cache asynchronously instead of during the request/response cycle:
+
+.. sourcecode:: python
 
     import datetime
     from django.shortcuts import render
@@ -178,6 +182,9 @@ Much of this behaviour can be configured by using a subclass of
 ``cacheback.Job``.  The decorator is only intended for simple use-cases.  See
 the :doc:`usage` and :doc:`api` documentation for more information.
 
+All of the worker related things above an also be done using rq instead of
+Celery.
+
 Contents
 ========
 
@@ -187,6 +194,7 @@ Contents
    installation
    usage
    api
+   settings
    advanced
    contributing
 

@@ -1,0 +1,2 @@
+python-memcached==1.53
+cache-tagging==0.7.7.0

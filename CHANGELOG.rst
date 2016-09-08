@@ -2,6 +2,39 @@
 Changelog
 =========
 
+1.1
+~~~
+
+* Added support for multiple background workers (currently Celery and rq)
+* Add pytest support
+
+1.0
+~~~
+* Support Django versions >= 1.7
+* Update sandbox to work with Django 1.9
+
+0.9.1
+~~~~~
+* Fix silly ``NameError`` introduced in 0.9 (`#39`)
+
+.. _`#39`: https://github.com/codeinthehole/django-cacheback/pull/39
+
+0.9
+~~~
+* Add support for other caches (`#32`_) 
+* Fix inconsistent hasing issue in Python 3.x (`#28`_)
+* Allow ``job_class_kwargs`` to be passed to ``cacheback`` decorator (`#31`_)
+
+.. _`#32`: https://github.com/codeinthehole/django-cacheback/pull/32
+.. _`#28`: https://github.com/codeinthehole/django-cacheback/pull/28
+.. _`#31`: https://github.com/codeinthehole/django-cacheback/pull/31
+
+0.8
+~~~
+* Add support for Python 3 (`#24`_)
+
+.. _`#24`: https://github.com/codeinthehole/django-cacheback/pull/24
+
 0.7
 ~~~
 * Include the class name and module path in the cache key by defauly (`#21`_)
